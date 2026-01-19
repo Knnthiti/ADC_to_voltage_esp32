@@ -1,48 +1,48 @@
 #include <driver/adc.h>
 #include <esp_adc_cal.h>
 
-uint32_t raw_value = 0;
-uint32_t raw_value_avg = 0;
+// Define the ADC channel to use (ADC1_CHANNEL_6 corresponds to GPIO 34)
+#define ADC_CHANNEL ADC1_CHANNEL_6 
 
-// float V_offset = 0;
-// uint16_t mV = 0;
-
-uint16_t V = 0;
-uint16_t V_avg = 0;
-
-//https://docs.espressif.com/projects/esp-idf/en/v4.4.3/esp32/api-reference/peripherals/adc.html#adc-channels     //datasheet esp32
-//https://embeddedexplorer.com/esp32-adc-esp-idf-tutorial/                                                        //tutorial use adc esp32 library
-
+// Structure to store ADC calibration characteristics
 esp_adc_cal_characteristics_t adc1_chars;
 
 void setup() {
-  esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_11, ADC_WIDTH_BIT_12, 0, &adc1_chars);
-
   Serial.begin(115200);
+
+  // 1. Configure ADC resolution to 12-bit (Output range: 0 - 4095)
+  adc1_config_width(ADC_WIDTH_BIT_12);
+
+  // 2. Set Attenuation to 11dB (Allows measuring input voltage up to approx. 2.6V - 3.3V)
+  // Note: This hardware configuration must match the characterization parameters set below.
+  adc1_config_channel_atten(ADC_CHANNEL, ADC_ATTEN_DB_11);
+
+  // 3. Characterize the ADC to correct non-linearity and reference voltage error
+  // This function uses the factory Vref stored in the ESP32's eFuse for precision.
+  esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_11, ADC_WIDTH_BIT_12, 0, &adc1_chars);
 }
 
 void loop() {
-  raw_value_avg = 0;
+  uint32_t raw_sum = 0;
+  uint32_t raw_avg = 0;
+  uint32_t voltage_mV = 0;
 
-  for (uint8_t i = 0 ; i < 100; i++) {
-    raw_value = adc1_get_raw(ADC1_CHANNEL_6);  //analogRead(pin 34);
-
-    raw_value = map(raw_value, 4095, 0, 0, 4095);
-
-    raw_value_avg += raw_value;
-
-    delay(1);
+  // Take 100 samples to calculate the average (Signal smoothing)
+  for (int i = 0; i < 100; i++) {
+    raw_sum += adc1_get_raw(ADC_CHANNEL);
+    delay(1); // Small delay between samples
   }
-  // mV = map(raw_value ,142 ,3145 ,0 ,24000);
-  // V_offset = map(mV ,24000 ,0 ,-1000 ,1000);
 
-  // V = (mV+V_offset)/1000.0;
-  
-  raw_value_avg = raw_value_avg/100;
-  V = esp_adc_cal_raw_to_voltage(raw_value_avg, &adc1_chars);
+  // Calculate the average raw value
+  raw_avg = raw_sum / 100;
 
-  Serial.print(raw_value_avg);
-  Serial.print(" , ");
-  Serial.print(V);
+  // Convert the raw average to voltage (mV) using the calibration data
+  voltage_mV = esp_adc_cal_raw_to_voltage(raw_avg, &adc1_chars);
+
+  // Print results to Serial Monitor
+  Serial.print("Raw: ");
+  Serial.print(raw_avg);
+  Serial.print("\t Voltage: ");
+  Serial.print(voltage_mV);
   Serial.println(" mV");
 }
